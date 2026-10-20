@@ -2,8 +2,11 @@ package top.niunaijun.blackboxa.view.main
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.util.Log
 import java.io.File
+import java.io.FileOutputStream
+
 import top.niunaijun.blackbox.BlackBoxCore
 import top.niunaijun.blackbox.app.BActivityThread
 import top.niunaijun.blackbox.app.configuration.AppLifecycleCallback
@@ -12,33 +15,32 @@ import top.niunaijun.blackboxa.app.App
 import top.niunaijun.blackboxa.app.rocker.RockerManager
 import top.niunaijun.blackboxa.biz.cache.AppSharedPreferenceDelegate
 
-
 class BlackBoxLoader {
 
     private var mHideRoot by AppSharedPreferenceDelegate(App.getContext(), false)
-
     private var mDaemonEnable by AppSharedPreferenceDelegate(App.getContext(), false)
     private var mShowShortcutPermissionDialog by AppSharedPreferenceDelegate(App.getContext(), true)
-
-    
     private var mUseVpnNetwork by AppSharedPreferenceDelegate(App.getContext(), false)
-
     private var mDisableFlagSecure by AppSharedPreferenceDelegate(App.getContext(), false)
+
+    companion object {
+        val TAG: String = BlackBoxLoader::class.java.simpleName
+    }
 
     fun hideRoot(): Boolean {
         return try {
             mHideRoot
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting hideRoot: ${e.message}")
+            Log.e(TAG, "Error getting hideRoot", e)
             false
         }
     }
 
     fun invalidHideRoot(hideRoot: Boolean) {
         try {
-            this.mHideRoot = hideRoot
+            mHideRoot = hideRoot
         } catch (e: Exception) {
-            Log.e(TAG, "Error setting hideRoot: ${e.message}")
+            Log.e(TAG, "Error setting hideRoot", e)
         }
     }
 
@@ -46,16 +48,16 @@ class BlackBoxLoader {
         return try {
             mDisableFlagSecure
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting disableFlagSecure: ${e.message}")
+            Log.e(TAG, "Error getting disableFlagSecure", e)
             false
         }
     }
 
     fun invalidDisableFlagSecure(disable: Boolean) {
         try {
-            this.mDisableFlagSecure = disable
+            mDisableFlagSecure = disable
         } catch (e: Exception) {
-            Log.e(TAG, "Error setting disableFlagSecure: ${e.message}")
+            Log.e(TAG, "Error setting disableFlagSecure", e)
         }
     }
 
@@ -63,16 +65,16 @@ class BlackBoxLoader {
         return try {
             mDaemonEnable
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting daemonEnable: ${e.message}")
+            Log.e(TAG, "Error getting daemonEnable", e)
             false
         }
     }
 
     fun invalidDaemonEnable(enable: Boolean) {
         try {
-            this.mDaemonEnable = enable
+            mDaemonEnable = enable
         } catch (e: Exception) {
-            Log.e(TAG, "Error setting daemonEnable: ${e.message}")
+            Log.e(TAG, "Error setting daemonEnable", e)
         }
     }
 
@@ -80,16 +82,16 @@ class BlackBoxLoader {
         return try {
             mShowShortcutPermissionDialog
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting showShortcutPermissionDialog: ${e.message}")
+            Log.e(TAG, "Error getting showShortcutPermissionDialog", e)
             true
         }
     }
 
     fun invalidShortcutPermissionDialog(show: Boolean) {
         try {
-            this.mShowShortcutPermissionDialog = show
+            mShowShortcutPermissionDialog = show
         } catch (e: Exception) {
-            Log.e(TAG, "Error setting showShortcutPermissionDialog: ${e.message}")
+            Log.e(TAG, "Error setting showShortcutPermissionDialog", e)
         }
     }
 
@@ -97,204 +99,199 @@ class BlackBoxLoader {
         return try {
             mUseVpnNetwork
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting useVpnNetwork: ${e.message}")
+            Log.e(TAG, "Error getting useVpnNetwork", e)
             false
         }
     }
 
     fun invalidUseVpnNetwork(enable: Boolean) {
         try {
-            this.mUseVpnNetwork = enable
+            mUseVpnNetwork = enable
         } catch (e: Exception) {
-            Log.e(TAG, "Error setting useVpnNetwork: ${e.message}")
+            Log.e(TAG, "Error setting useVpnNetwork", e)
         }
     }
 
     fun getBlackBoxCore(): BlackBoxCore {
-        return try {
-            BlackBoxCore.get()
+        return BlackBoxCore.get()
+    }
+
+    /**
+     * ينسخ جميع ملفات APK من assets/apps إلى التخزين الداخلي.
+     * يعيد قائمة الملفات التي تم نسخها بنجاح.
+     */
+    fun importApkAssets(context: Context): List<File> {
+        val importedFiles = mutableListOf<File>()
+
+        try {
+            val apkNames = context.assets.list("apps") ?: emptyArray()
+            val outputDir = File(context.filesDir, "apk_imports")
+
+            if (!outputDir.exists() && !outputDir.mkdirs()) {
+                Log.e(TAG, "Cannot create APK directory")
+                return emptyList()
+            }
+
+            for (name in apkNames) {
+                if (!name.endsWith(".apk", ignoreCase = true)) {
+                    continue
+                }
+
+                try {
+                    val outputFile = File(outputDir, name)
+
+                    context.assets.open("apps/$name").use { input ->
+                        FileOutputStream(outputFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+
+                    if (outputFile.isFile && outputFile.length() > 0L) {
+                        importedFiles.add(outputFile)
+                        Log.i(TAG, "APK prepared: ${outputFile.absolutePath}")
+                    } else {
+                        Log.e(TAG, "APK file is empty: $name")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to copy APK: $name", e)
+                }
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting BlackBoxCore: ${e.message}")
-            throw e
+            Log.e(TAG, "Failed to read assets/apps", e)
         }
+
+        return importedFiles
     }
 
     fun addLifecycleCallback() {
         try {
-            BlackBoxCore.get()
-                    .addAppLifecycleCallback(
-                            object : AppLifecycleCallback() {
-                                override fun beforeCreateApplication(
-                                        packageName: String?,
-                                        processName: String?,
-                                        context: Context?,
-                                        userId: Int
-                                ) {
-                                    try {
-                                        Log.d(
-                                                TAG,
-                                                "beforeCreateApplication: pkg $packageName, processName $processName,userID:${BActivityThread.getUserId()}"
-                                        )
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "Error in beforeCreateApplication: ${e.message}")
-                                    }
-                                }
+            BlackBoxCore.get().addAppLifecycleCallback(
+                object : AppLifecycleCallback() {
 
-                                override fun beforeApplicationOnCreate(
-                                        packageName: String?,
-                                        processName: String?,
-                                        application: Application?,
-                                        userId: Int
-                                ) {
-                                    try {
-                                        Log.d(
-                                                TAG,
-                                                "beforeApplicationOnCreate: pkg $packageName, processName $processName"
-                                        )
-                                    } catch (e: Exception) {
-                                        Log.e(
-                                                TAG,
-                                                "Error in beforeApplicationOnCreate: ${e.message}"
-                                        )
-                                    }
-                                }
+                    override fun beforeCreateApplication(
+                        packageName: String?,
+                        processName: String?,
+                        context: Context?,
+                        userId: Int
+                    ) {
+                        Log.d(
+                            TAG,
+                            "beforeCreateApplication: pkg=$packageName, " +
+                                "process=$processName, userID=${BActivityThread.getUserId()}"
+                        )
+                    }
 
-                                override fun afterApplicationOnCreate(
-                                        packageName: String?,
-                                        processName: String?,
-                                        application: Application?,
-                                        userId: Int
-                                ) {
-                                    try {
-                                        Log.d(
-                                                TAG,
-                                                "afterApplicationOnCreate: pkg $packageName, processName $processName"
-                                        )
-                                        RockerManager.init(application, userId)
-                                    } catch (e: Exception) {
-                                        Log.e(
-                                                TAG,
-                                                "Error in afterApplicationOnCreate: ${e.message}"
-                                        )
-                                    }
-                                }
+                    override fun beforeApplicationOnCreate(
+                        packageName: String?,
+                        processName: String?,
+                        application: Application?,
+                        userId: Int
+                    ) {
+                        Log.d(
+                            TAG,
+                            "beforeApplicationOnCreate: pkg=$packageName, process=$processName"
+                        )
+                    }
 
-                                override fun onStoragePermissionNeeded(
-                                        packageName: String?,
-                                        userId: Int
-                                ): Boolean {
-                                    try {
-                                        Log.w(
-                                                TAG,
-                                                "Storage permission needed for launching: $packageName"
-                                        )
-                                        
-                                        
-                                        
-                                        val intent =
-                                                android.content.Intent(
-                                                        "top.niunaijun.blackboxa.REQUEST_STORAGE_PERMISSION"
-                                                )
-                                        intent.putExtra("package_name", packageName)
-                                        intent.putExtra("user_id", userId)
-                                        intent.setPackage(App.getContext().packageName)
-                                        App.getContext().sendBroadcast(intent)
-                                        
-                                        
-                                        
-                                        
-                                        
-                                        return false
-                                    } catch (e: Exception) {
-                                        Log.e(
-                                                TAG,
-                                                "Error in onStoragePermissionNeeded: ${e.message}"
-                                        )
-                                        return false
-                                    }
-                                }
+                    override fun afterApplicationOnCreate(
+                        packageName: String?,
+                        processName: String?,
+                        application: Application?,
+                        userId: Int
+                    ) {
+                        try {
+                            Log.d(
+                                TAG,
+                                "afterApplicationOnCreate: pkg=$packageName, process=$processName"
+                            )
+                            RockerManager.init(application, userId)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "RockerManager initialization failed", e)
+                        }
+                    }
+
+                    override fun onStoragePermissionNeeded(
+                        packageName: String?,
+                        userId: Int
+                    ): Boolean {
+                        return try {
+                            Log.w(TAG, "Storage permission needed: $packageName")
+
+                            val intent = Intent(
+                                "top.niunaijun.blackboxa.REQUEST_STORAGE_PERMISSION"
+                            ).apply {
+                                putExtra("package_name", packageName)
+                                putExtra("user_id", userId)
+                                setPackage(App.getContext().packageName)
                             }
-                    )
+
+                            App.getContext().sendBroadcast(intent)
+                            false
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Storage permission request failed", e)
+                            false
+                        }
+                    }
+                }
+            )
         } catch (e: Exception) {
-            Log.e(TAG, "Error adding lifecycle callback: ${e.message}")
+            Log.e(TAG, "Error adding lifecycle callback", e)
         }
     }
 
     fun attachBaseContext(context: Context) {
         try {
-            BlackBoxCore.get()
-                    .doAttachBaseContext(
-                            context,
-                            object : ClientConfiguration() {
-                                override fun getHostPackageName(): String {
-                                    return try {
-                                        context.packageName
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "Error getting package name: ${e.message}")
-                                        "unknown"
-                                    }
-                                }
+            BlackBoxCore.get().doAttachBaseContext(
+                context,
+                object : ClientConfiguration() {
 
-                                override fun isHideRoot(): Boolean {
-                                    return try {
-                                        mHideRoot
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "Error checking hideRoot: ${e.message}")
-                                        false
-                                    }
-                                }
+                    override fun getHostPackageName(): String {
+                        return context.packageName
+                    }
 
-                                override fun isEnableDaemonService(): Boolean {
-                                    return try {
-                                        mDaemonEnable
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "Error checking daemonEnable: ${e.message}")
-                                        false
-                                    }
-                                }
+                    override fun isHideRoot(): Boolean {
+                        return hideRoot()
+                    }
 
-                                override fun isUseVpnNetwork(): Boolean {
-                                    return try {
-                                        mUseVpnNetwork
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "Error checking useVpnNetwork: ${e.message}")
-                                        false
-                                    }
-                                }
+                    override fun isEnableDaemonService(): Boolean {
+                        return daemonEnable()
+                    }
 
-                                override fun isDisableFlagSecure(): Boolean {
-                                    return try {
-                                        mDisableFlagSecure
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "Error checking disableFlagSecure: ${e.message}")
-                                        false
-                                    }
-                                }
+                    override fun isUseVpnNetwork(): Boolean {
+                        return useVpnNetwork()
+                    }
 
-                                override fun requestInstallPackage(
-                                        file: File?,
-                                        userId: Int
-                                ): Boolean {
-                                    return try {
-                                        if (file == null) {
-                                            Log.w(TAG, "requestInstallPackage: file is null")
-                                            return false
-                                        }
-                                        val packageInfo =
-                                                context.packageManager.getPackageArchiveInfo(
-                                                        file.absolutePath,
-                                                        0
-                                                )
-                                        false
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "Error in requestInstallPackage: ${e.message}")
-                                        false
-                                    }
-                                }
+                    override fun isDisableFlagSecure(): Boolean {
+                        return disableFlagSecure()
+                    }
+
+                    override fun requestInstallPackage(
+                        file: File?,
+                        userId: Int
+                    ): Boolean {
+                        return try {
+                            if (file == null || !file.isFile) {
+                                Log.e(TAG, "Install request has no valid APK file")
+                                false
+                            } else {
+                                Log.i(
+                                    TAG,
+                                    "Install requested: ${file.absolutePath}, userId=$userId"
+                                )
+
+                                // لم تتم إضافة عملية التثبيت هنا لأن واجهتها
+                                // تعتمد على إصدار BlackBox المستخدم.
+                                false
                             }
-                    )
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Install request failed", e)
+                            false
+                        }
+                    }
+                }
+            )
         } catch (e: Exception) {
-            Log.e(TAG, "Error in attachBaseContext: ${e.message}")
+            Log.e(TAG, "Error in attachBaseContext", e)
         }
     }
 
@@ -302,67 +299,25 @@ class BlackBoxLoader {
         try {
             BlackBoxCore.get().doCreate()
 
-            
             try {
                 BlackBoxCore.get().addServiceAvailableCallback {
-                    Log.d(TAG, "Services became available, triggering app list refresh")
-                    installBundledApksFromAssets(context)
+                    Log.d(TAG, "BlackBox services are available")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error registering service available callback: ${e.message}")
+                Log.e(TAG, "Failed to register service callback", e)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in doOnCreate: ${e.message}")
-        }
-    }
 
-    /**
-     * يفحص مجلد assets/apps بحثًا عن ملفات APK ويثبّت أي ملف غير مثبّت
-     * داخل البيئة الافتراضية (BlackBox) للمستخدم المحدد. لا يلمس نظام
-     * الجهاز الحقيقي إطلاقًا؛ التثبيت يتم فقط داخل الـ sandbox الخاصة
-     * بـ BlackBox، تمامًا مثل أي تثبيت يقوم به المستخدم يدويًا من داخل التطبيق.
-     */
-    fun installBundledApksFromAssets(context: Context, userId: Int = 0) {
-        try {
-            val assetDir = "apps"
-            val apkNames = context.assets.list(assetDir)?.filter { it.endsWith(".apk") } ?: return
-            if (apkNames.isEmpty()) return
+            // تجهيز ملفات APK الموجودة في assets/apps.
+            val apkFiles = importApkAssets(context)
 
-            val outDir = File(context.cacheDir, "bundled_apks").apply { mkdirs() }
+            Log.i(TAG, "Number of APK files prepared: ${apkFiles.size}")
 
-            for (apkName in apkNames) {
-                try {
-                    val outFile = File(outDir, apkName)
-
-                    // انسخ من assets إلى ملف فعلي (assets غير قابلة للوصول كمسار مباشر)
-                    context.assets.open("$assetDir/$apkName").use { input ->
-                        outFile.outputStream().use { output -> input.copyTo(output) }
-                    }
-
-                    // اقرأ اسم الحزمة لتفادي إعادة تثبيت تطبيق مثبّت أصلًا
-                    val archiveInfo = context.packageManager.getPackageArchiveInfo(outFile.absolutePath, 0)
-                    val packageName = archiveInfo?.packageName
-                    if (packageName != null && BlackBoxCore.get().isInstalled(packageName, userId)) {
-                        Log.d(TAG, "installBundledApksFromAssets: $packageName already installed, skipping")
-                        continue
-                    }
-
-                    val result = BlackBoxCore.get().installPackageAsUser(outFile, userId)
-                    if (result.success) {
-                        Log.d(TAG, "installBundledApksFromAssets: installed $apkName -> ${result.packageName}")
-                    } else {
-                        Log.w(TAG, "installBundledApksFromAssets: failed to install $apkName: ${result.msg}")
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "installBundledApksFromAssets: error handling $apkName: ${e.message}")
-                }
+            apkFiles.forEach { apk ->
+                Log.i(TAG, "Ready for installation: ${apk.name}")
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in installBundledApksFromAssets: ${e.message}")
-        }
-    }
 
-    companion object {
-        val TAG: String = BlackBoxLoader::class.java.simpleName
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in doOnCreate", e)
+        }
     }
 }
