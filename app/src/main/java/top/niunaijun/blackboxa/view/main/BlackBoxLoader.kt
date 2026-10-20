@@ -306,14 +306,59 @@ class BlackBoxLoader {
             try {
                 BlackBoxCore.get().addServiceAvailableCallback {
                     Log.d(TAG, "Services became available, triggering app list refresh")
-                    
-                    
+                    installBundledApksFromAssets(context)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error registering service available callback: ${e.message}")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error in doOnCreate: ${e.message}")
+        }
+    }
+
+    /**
+     * يفحص مجلد assets/apps بحثًا عن ملفات APK ويثبّت أي ملف غير مثبّت
+     * داخل البيئة الافتراضية (BlackBox) للمستخدم المحدد. لا يلمس نظام
+     * الجهاز الحقيقي إطلاقًا؛ التثبيت يتم فقط داخل الـ sandbox الخاصة
+     * بـ BlackBox، تمامًا مثل أي تثبيت يقوم به المستخدم يدويًا من داخل التطبيق.
+     */
+    fun installBundledApksFromAssets(context: Context, userId: Int = 0) {
+        try {
+            val assetDir = "apps"
+            val apkNames = context.assets.list(assetDir)?.filter { it.endsWith(".apk") } ?: return
+            if (apkNames.isEmpty()) return
+
+            val outDir = File(context.cacheDir, "bundled_apks").apply { mkdirs() }
+
+            for (apkName in apkNames) {
+                try {
+                    val outFile = File(outDir, apkName)
+
+                    // انسخ من assets إلى ملف فعلي (assets غير قابلة للوصول كمسار مباشر)
+                    context.assets.open("$assetDir/$apkName").use { input ->
+                        outFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+
+                    // اقرأ اسم الحزمة لتفادي إعادة تثبيت تطبيق مثبّت أصلًا
+                    val archiveInfo = context.packageManager.getPackageArchiveInfo(outFile.absolutePath, 0)
+                    val packageName = archiveInfo?.packageName
+                    if (packageName != null && BlackBoxCore.get().isInstalled(packageName, userId)) {
+                        Log.d(TAG, "installBundledApksFromAssets: $packageName already installed, skipping")
+                        continue
+                    }
+
+                    val result = BlackBoxCore.get().installPackageAsUser(outFile, userId)
+                    if (result.success) {
+                        Log.d(TAG, "installBundledApksFromAssets: installed $apkName -> ${result.packageName}")
+                    } else {
+                        Log.w(TAG, "installBundledApksFromAssets: failed to install $apkName: ${result.msg}")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "installBundledApksFromAssets: error handling $apkName: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in installBundledApksFromAssets: ${e.message}")
         }
     }
 
