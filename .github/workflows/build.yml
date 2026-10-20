@@ -1,4 +1,4 @@
-name: Build Single APK
+name: Build Single APK (arm64-v8a)
 
 on:
   workflow_dispatch:
@@ -30,9 +30,9 @@ jobs:
       - name: Build Debug APK
         run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
 
-      - name: Upload APK Artifact
+      - name: Upload arm64-v8a APK
         uses: actions/upload-artifact@v4
         with:
-          name: debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: arm64-v8a-apk
+          path: app/build/outputs/apk/debug/*arm64-v8a*.apk
           if-no-files-found: error
