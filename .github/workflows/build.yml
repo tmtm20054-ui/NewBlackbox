@@ -23,12 +23,9 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: ''
 
       - name: Accept Android SDK Licenses
-        run: |
-          yes | sdkmanager --licenses
+        run: yes | sdkmanager --licenses
 
       - name: Install Android SDK Components
         run: |
@@ -38,28 +35,58 @@ jobs:
             "build-tools;35.0.0" \
             "ndk;29.0.13846066"
 
-      - name: Verify NDK
-        run: |
-          test -d "$ANDROID_HOME/ndk/29.0.13846066"
-          echo "NDK installed successfully"
-
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build Debug APK
+      - name: Build ARM64 APK
         run: |
           ./gradlew :app:assembleDebug \
+            --no-daemon \
             --stacktrace \
-            --no-daemon
+            -Pandroid.injected.build.abi=arm64-v8a
 
-      - name: List Generated APKs
-        if: success()
+      - name: Verify APK
         run: |
-          find app/build/outputs/apk -type f -name "*.apk"
+          python3 - <<'PY'
+          import glob
+          import os
+          import zipfile
+          import sys
 
-      - name: Upload APK
+          files = glob.glob("app/build/outputs/apk/debug/*.apk")
+
+          if not files:
+              print("ERROR: No APK generated")
+              sys.exit(1)
+
+          for apk in files:
+              with zipfile.ZipFile(apk) as z:
+                  libs = [
+                      n for n in z.namelist()
+                      if n.startswith("lib/") and n.endswith(".so")
+                  ]
+
+                  abis = sorted(set(
+                      n.split("/")[1]
+                      for n in libs
+                      if len(n.split("/")) >= 3
+                  ))
+
+                  print("APK:", apk)
+                  print("Native ABIs:", abis or "No native libraries")
+
+                  unexpected = [a for a in abis if a != "arm64-v8a"]
+
+                  if unexpected:
+                      print("ERROR: Unexpected ABIs:", unexpected)
+                      sys.exit(1)
+
+          print("Verification passed.")
+          PY
+
+      - name: Upload ARM64 APK
         uses: actions/upload-artifact@v4
         with:
-          name: NewBlackbox-debug-apk
+          name: NewBlackbox-arm64-v8a
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
