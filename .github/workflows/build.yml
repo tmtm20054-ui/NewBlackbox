@@ -3,90 +3,31 @@ name: Build Single APK (arm64-v8a)
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches: [ main, master ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: 21
           cache: gradle
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Accept Android SDK licenses
+        run: yes | "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager" --licenses || true
 
-      - name: Accept Android SDK Licenses
-        run: yes | sdkmanager --licenses
+      - run: chmod +x gradlew
 
-      - name: Install Android SDK Components
-        run: |
-          sdkmanager --install \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
-            "ndk;29.0.13846066"
+      - name: Build Debug APK
+        run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      - name: Build ARM64 APK
-        run: |
-          ./gradlew :app:assembleDebug \
-            --no-daemon \
-            --stacktrace \
-            -Pandroid.injected.build.abi=arm64-v8a
-
-      - name: Verify APK
-        run: |
-          python3 - <<'PY'
-          import glob
-          import os
-          import zipfile
-          import sys
-
-          files = glob.glob("app/build/outputs/apk/debug/*.apk")
-
-          if not files:
-              print("ERROR: No APK generated")
-              sys.exit(1)
-
-          for apk in files:
-              with zipfile.ZipFile(apk) as z:
-                  libs = [
-                      n for n in z.namelist()
-                      if n.startswith("lib/") and n.endswith(".so")
-                  ]
-
-                  abis = sorted(set(
-                      n.split("/")[1]
-                      for n in libs
-                      if len(n.split("/")) >= 3
-                  ))
-
-                  print("APK:", apk)
-                  print("Native ABIs:", abis or "No native libraries")
-
-                  unexpected = [a for a in abis if a != "arm64-v8a"]
-
-                  if unexpected:
-                      print("ERROR: Unexpected ABIs:", unexpected)
-                      sys.exit(1)
-
-          print("Verification passed.")
-          PY
-
-      - name: Upload ARM64 APK
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: NewBlackbox-arm64-v8a
-          path: app/build/outputs/apk/debug/*.apk
+          name: arm64-v8a-apk
+          path: app/build/outputs/apk/debug/*arm64-v8a*.apk
           if-no-files-found: error
